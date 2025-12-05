@@ -1,0 +1,41 @@
+-- CTE to get the latest exchange rate per month per currency
+WITH cte_exchange_rate AS (
+    SELECT 
+        TO_CURRENCY_ID,
+        RATE,
+        RATE_DATE,
+        DATE_TRUNC('MONTH', RATE_DATE) AS RATE_DATE_MONTH,
+        ROW_NUMBER() OVER (
+            PARTITION BY TO_CURRENCY_ID, DATE_TRUNC('MONTH', RATE_DATE)
+            ORDER BY RATE_DATE DESC
+        ) AS rn
+    FROM CLEANSED.COUPA.COUPA_EXCHANGE_RATE_BCV
+),
+cte_latest_rate AS (
+    SELECT 
+        TO_CURRENCY_ID,
+        RATE,
+        RATE_DATE,
+        RATE_DATE_MONTH
+    FROM cte_exchange_rate
+    WHERE rn = 1
+)
+SELECT 
+    cih.INVOICE_NUMBER, 
+    csb.NAME,
+    cte.RATE * cih.gross_total AS GROSS_TOTAL_USD, 
+    date(cih.PAYMENT_DATE) AS PAYMENT_DATE,
+    FROM CLEANSED.COUPA.COUPA_INVOICE_HEADER_BCV cih
+    LEFT JOIN _SANDBOX_WORKING_CAPITAL.WORKING_CAPITAL.WC_AP_ZDP waz
+        ON cih.INVOICE_NUMBER = waz.INVOICE__
+    LEFT JOIN CLEANSED.COUPA.COUPA_SUPPLIER_BCV csb
+        ON cih.SUPPLIER_ID = csb.ID
+LEFT JOIN cte_latest_rate cte
+    ON cih.CURRENCY_ID = cte.TO_CURRENCY_ID
+    AND DATE_TRUNC('MONTH', cih.PAYMENT_DATE) = cte.RATE_DATE_MONTH
+WHERE 1=1
+   AND waz.INVOICE__ IS NULL
+   AND cih.PAYMENT_DATE BETWEEN '2025-11-01' AND '2025-11-30'
+ORDER BY 
+cih.PAYMENT_DATE, 
+INVOICE_NUMBER
