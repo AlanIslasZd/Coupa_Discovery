@@ -1,40 +1,38 @@
-WITH invoice_match AS (
+WITH supplier_tier AS (
     SELECT 
-        a.invoice_number, 
-        a.supplier_id,
-        b.invoice__,
-        CASE WHEN b.invoice__ IS NULL AND a.invoice_number IS NOT NULL THEN 1 ELSE 0 END AS missing_invoice_indicator
-    FROM cleansed.coupa.coupa_invoice_header_bcv a
-    LEFT JOIN _sandbox_working_capital.working_capital.wc_ap_zdp b
-        ON a.invoice_number = b.invoice__
-    WHERE 1=1
-      and date(a.payment_date) between '2025-09-01' and '2025-12-31'
-      AND a.PAID = true
+        B.ID AS supplier_id,
+        f.value:name::STRING AS supplier_tier_value
+    FROM CLEANSED.COUPA.coupa_supplier_bcv B,
+    LATERAL FLATTEN(input => B.custom_fields) f
+    WHERE f.key = 'supplier-tier'
 ),
-supplier_summary as (
-SELECT 
-    supplier_id,
-    COUNT(*) AS total_invoices,
-    SUM(missing_invoice_indicator) AS missing_invoices,
-    COUNT(*) - SUM(missing_invoice_indicator) AS matched_invoices,
-    ROUND(SUM(missing_invoice_indicator) * 100.0 / COUNT(*), 2) AS missing_rate_pct,
-    ROUND((COUNT(*) - SUM(missing_invoice_indicator)) * 100.0 / COUNT(*), 2) AS match_rate_pct
-FROM invoice_match
-GROUP BY supplier_id
-HAVING COUNT(*) >= 10  -- Filter to users with at least 10 invoices for meaningful comparison
---ORDER BY missing_rate_pct DESC
+
+invoice_indicator AS (
+    SELECT 
+        st.supplier_tier_value,
+        CASE 
+            WHEN C.INVOICE__ IS NOT NULL THEN 'BOTH'
+            ELSE 'COUPA ONLY'
+        END AS missing_invoice_indicator,
+        COUNT(1) AS count
+    FROM CLEANSED.COUPA.COUPA_INVOICE_HEADER_BCV A
+    JOIN CLEANSED.COUPA.coupa_supplier_bcv B
+        ON A.SUPPLIER_ID = B.ID
+    LEFT JOIN supplier_tier st
+        ON B.ID = st.supplier_id
+    LEFT JOIN _sandbox_working_capital.working_capital_uploads.wc_ap_zdp_december C
+        ON A.INVOICE_NUMBER = C.INVOICE__
+    WHERE DATE(A.PAYMENT_DATE) BETWEEN '2025-12-01' AND '2025-12-31'
+    GROUP BY 1, 2
 )
+
 SELECT 
-    supplier_id,
-    total_invoices,
-    missing_invoices,
-    matched_invoices,
-    missing_rate_pct,
-    match_rate_pct,
-    -- Total summary row
-    SUM(total_invoices) OVER () AS grand_total_invoices,
-    SUM(missing_invoices) OVER () AS grand_total_missing,
-    SUM(matched_invoices) OVER () AS grand_total_matched,
-    ROUND(SUM(missing_invoices) OVER () * 100.0 / SUM(total_invoices) OVER (), 2) AS overall_missing_rate_pct
-FROM supplier_summary
-ORDER BY missing_rate_pct DESC;
+    supplier_tier_value,
+    COALESCE(SUM(CASE WHEN missing_invoice_indicator = 'BOTH' THEN count END), 0) AS both_count,
+    COALESCE(SUM(CASE WHEN missing_invoice_indicator = 'COUPA ONLY' THEN count END), 0) AS coupa_only_count,
+    SUM(count) AS total_count,
+    ROUND(COALESCE(SUM(CASE WHEN missing_invoice_indicator = 'BOTH' THEN count END), 0) * 100.0 / SUM(count), 2) AS both_pct,
+    ROUND(COALESCE(SUM(CASE WHEN missing_invoice_indicator = 'COUPA ONLY' THEN count END), 0) * 100.0 / SUM(count), 2) AS coupa_only_pct
+FROM invoice_indicator
+GROUP BY supplier_tier_value
+ORDER BY total_count DESC;
