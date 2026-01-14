@@ -63,6 +63,7 @@ invoice_data AS (
     10657, -- $491k Missing (97.5%)
     4216   -- $490k Missing (99.6%)
 )
+      
       -- Add your other quality checks here
     QUALIFY ROW_NUMBER() OVER (PARTITION BY CIH.INVOICE_NUMBER ORDER BY CIH.GROSS_TOTAL DESC) = 1
 ),
@@ -183,7 +184,7 @@ SELECT
 
 FROM final_data
 WHERE PAYMENT_DATE IS NOT NULL
-  AND CHANNEL != 'api' -- <--- Excellent, you kept the API exclusion
+  AND CHANNEL not in ('api','cxml') -- <--- Excellent, you kept the API exclusion
   -- Reminder: To fully match our previous findings, ensure you also 
   -- exclude the specific legal suppliers (DLA Piper, Orrick, etc.) if needed.
 GROUP BY 1
