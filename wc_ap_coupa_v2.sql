@@ -46,9 +46,23 @@ invoice_data AS (
       AND CIH.STATUS != 'Voided'
       AND CIH.GROSS_TOTAL >= 0
       AND CIH.CURRENCY_ID != 144
-      and cih.supplier_id not in (
-      
-      )
+      AND CIH.SUPPLIER_ID NOT IN (
+    9661,  -- $5.0M Missing (98.7%)
+    335,   -- $2.4M Missing (100%)
+    6556,  -- $2.1M Missing (100%)
+    4867,  -- $1.9M Missing (100% - 101 Invoices!)
+    2115,  -- $1.4M Missing (98.2%)
+    6465,  -- $1.4M Missing (100%)
+    481,   -- $1.0M Missing (97.3%)
+    5733,  -- $773k Missing (100%)
+    10050, -- $603k Missing (100%)
+    2095,  -- $588k Missing (100%)
+    10664, -- $581k Missing (100%)
+    8689,  -- $527k Missing (100%)
+    7932,  -- $500k Missing (100%)
+    10657, -- $491k Missing (97.5%)
+    4216   -- $490k Missing (99.6%)
+)
       -- Add your other quality checks here
     QUALIFY ROW_NUMBER() OVER (PARTITION BY CIH.INVOICE_NUMBER ORDER BY CIH.GROSS_TOTAL DESC) = 1
 ),
